@@ -1,143 +1,251 @@
-# 🧠 Computer Vision Trading Screener
+# Computer Vision Trading Screener – Noise Test Ranking Engine
 
-High-performance quantitative screener for trading strategies using computer vision, statistical modeling, and parallel processing.
+## Overview
 
----
+This project implements a high-performance computer vision screener for quantitative trading strategy evaluation.
 
-## 📌 Overview
+The model analyzes trading chart images (Noise Test outputs) and reconstructs statistical behavior directly from pixel data using color segmentation and volatility modeling.
 
-This project implements an automated visual screening system that evaluates trading chart images and ranks strategies using quantitative metrics.
+The system:
 
-Instead of manually analyzing charts, the system:
+- Extracts statistical structure from chart images
+- Reconstructs mean and dispersion series
+- Computes correlation between signal and distribution
+- Calculates standardized deviation (Z-score)
+- Measures volatility envelope width
+- Applies multi-factor scoring
+- Ranks strategies automatically
+- Uses parallel processing for scalability
 
-• Extracts structured data directly from images  
-• Reconstructs statistical series  
-• Computes structural metrics  
-• Applies a weighted scoring model  
-• Generates automated rankings  
-
----
-
-## 🖥 Core Concept
-
-The system transforms chart images into quantitative datasets using computer vision.
-
-Image → Pixel Extraction → Statistical Reconstruction → Scoring → Ranking
+The objective is to filter and rank trading strategies based purely on statistical coherence and structural consistency.
 
 ---
 
-## 🔍 Processing Pipeline
+# How the Model Works
 
-### 1️⃣ Region of Interest Detection
-
-The relevant chart area is dynamically cropped using proportional scaling.
+The process is divided into five major phases.
 
 ---
 
-### 2️⃣ Color Segmentation (HSV Space)
+## 1️⃣ Region Extraction
 
-The system identifies:
+The script isolates the relevant area of the chart by cropping:
 
-- Blue mask → Main signal line
-- Cloud mask → Volatility region
+```python
+roi = img[top:bottom, left:right]
+```
 
-Using HSV thresholds for robust color detection.
+This removes UI elements and focuses only on the statistical plot.
 
----
+The image is then converted to HSV color space:
 
-### 3️⃣ Pixel-to-Series Transformation
+```python
+hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+```
 
-Each valid image column is converted into:
-
-- Main signal value
-- Cloud mean value
-- Cloud standard deviation
-
-This generates three numerical vectors:
-
-- Signal vector
-- Mean cloud vector
-- Volatility vector
+HSV allows precise color segmentation for signal reconstruction.
 
 ---
 
-### 4️⃣ Statistical Metrics Computed
+## 2️⃣ Signal & Distribution Reconstruction
 
-For each strategy:
+Two masks are created:
 
-• Pearson Correlation (structure alignment)  
-• Final Z-Score (relative deviation)  
-• Cloud Width (volatility proxy)  
+- Blue Mask → Signal Line
+- Cloud Mask → Distribution Band
 
----
+```python
+blue_mask = cv2.inRange(hsv_roi, blue_lower, blue_upper)
+cloud_mask = cv2.bitwise_and(full_color, cv2.bitwise_not(blue_mask))
+```
 
-### 5️⃣ Weighted Scoring Model
+For each sampled X-coordinate:
 
-Final score is computed as:
+- The first blue pixel is detected → Signal value
+- The cloud pixels are collected → Mean and standard deviation
 
-Score =  
-0.40 × Correlation Score  
-+ 0.35 × Z-Score Score  
-+ 0.25 × Volatility Score  
+Statistical reconstruction:
 
-This creates a multi-factor quantitative evaluation system.
+```python
+y_signal = altura - blue_pixels[0]
+y_mean   = altura - np.mean(cloud_pixels)
+y_std    = np.std(altura - cloud_pixels)
+```
 
----
-
-### 6️⃣ Strategy Filtering
-
-Strategies must satisfy:
-
-- Correlation range
-- Z-Score bounds
-- Volatility width limits
-
-Only qualifying strategies are marked as approved.
+This transforms pixel space into statistical series.
 
 ---
 
-### 7️⃣ Parallel Processing
+## 3️⃣ Statistical Metrics
 
-The system leverages all available CPU cores using:
+Three key quantitative metrics are computed:
 
-- multiprocessing
-- ProcessPoolExecutor
+### A) Correlation
 
-This enables scalable analysis of hundreds or thousands of chart images efficiently.
+Measures structural coherence between signal and mean:
+
+```python
+corr = np.corrcoef(y_signal, y_mean)[0, 1]
+```
+
+High correlation indicates alignment between signal and expected distribution.
 
 ---
 
-## 📊 Output
+### B) Z-Score (Final Position)
 
-The screener automatically generates an Excel report containing:
+Standardized distance between signal and distribution:
 
-- Complete ranking
-- Approved strategies only
+```python
+z_final = (y_signal[-1] - y_mean[-1]) / y_std[-1]
+```
+
+This measures statistical extremeness.
+
+---
+
+### C) Volatility Width
+
+Defined as:
+
+```python
+ancho_final = y_std[-1] * 4
+```
+
+This approximates a 4σ volatility envelope.
+
+---
+
+## 4️⃣ Multi-Factor Scoring System
+
+Each metric is scored independently:
+
+- Correlation score
+- Z-score score
+- Volatility width score
+
+Weighted final score:
+
+```python
+score_final = (
+    score_corr * 0.4 +
+    score_zscore * 0.35 +
+    score_ancho * 0.25
+)
+```
+
+This creates a structured ranking model instead of binary filtering.
+
+---
+
+## 5️⃣ Filtering Logic
+
+A strategy is approved only if:
+
+```
+CORR_MIN <= corr <= CORR_MAX
+ZSCORE_MIN <= z_final <= ZSCORE_MAX
+ANCHO_MIN <= ancho_final <= ANCHO_MAX
+```
+
+This ensures:
+
+- Statistical coherence
+- Controlled deviation
+- Acceptable volatility structure
+
+---
+
+## 6️⃣ Parallel Processing Engine
+
+The system uses:
+
+```python
+ProcessPoolExecutor
+```
+
+Tasks are distributed across multiple CPU cores:
+
+```python
+NUM_WORKERS = cpu_count() - 1
+```
+
+This allows high-speed evaluation of large strategy datasets.
+
+---
+
+## 7️⃣ Ranking Output
+
+The script automatically generates:
+
+- Full ranking
+- Approved strategies sheet
 - Statistics per asset
-- Top 20 best strategies
+- Top 20 summary
+
+Exported to Excel via:
+
+```python
+pandas + openpyxl
+```
 
 ---
 
-## 📂 Supported Folder Structures
+# Key Parameters
 
-Flat structure:
+These can be modified directly in the script:
 
-RESULTADOS/
-  Asset Strategy/
-    NoisseTrade.png
+```
+CORR_MIN = 0.80
+CORR_MAX = 1.00
 
-Hierarchical structure:
+ZSCORE_MIN = 0.5
+ZSCORE_MAX = 2.80
 
-RESULTADOS/
-  Asset/
-    Strategy/
-      NoisseTrade.png
-
-The system automatically detects the structure.
+ANCHO_MIN = 100
+ANCHO_MAX = 300.0
+```
 
 ---
 
-## 🚀 Installation
+# What This Project Demonstrates
 
-```bash
-pip install -r requirements.txt
+- Computer vision applied to quantitative trading
+- Statistical reconstruction from image data
+- Multi-factor scoring architecture
+- Volatility modeling
+- Z-score normalization
+- Parallel computing optimization
+- Automated ranking system
+
+---
+
+# Requirements
+
+```
+opencv-python
+numpy
+pandas
+scipy
+openpyxl
+```
+
+---
+
+# Performance Design
+
+The model is optimized for:
+
+- Vectorized NumPy operations
+- Minimal memory reallocation
+- Parallel execution
+- Efficient pixel scanning
+
+This allows scalable evaluation of large Noise Test datasets.
+
+---
+
+# Disclaimer
+
+This project is for research and educational purposes only.  
+It does not constitute financial advice.
